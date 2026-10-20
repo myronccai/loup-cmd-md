@@ -1,25 +1,42 @@
 @mode(host.dual)
 
 # Exit statuses of the whole command line. These tests print the program's
-# normal output and error messages.
+# messages.
 
-from debug.assert import (expectEq);
-from appinfo import (EXIT_OK, EXIT_USAGE);
+from debug.assert import (expect, expectEq);
+from io.fs import (createDir, isDir, removeDir, writeText);
+from appinfo import (EXIT_OK, EXIT_FAILURE);
 from cli.app import (run);
+
+func fresh(root: string): void {
+    if (isDir(root)) {
+        removeDir(root);
+    }
+    createDir(root);
+}
 
 func test_version_succeeds(): void {
     expectEq(run(["--version"]), EXIT_OK, "--version");
 }
 
-func test_hello_succeeds(): void {
-    expectEq(run(["hello", "tests"]), EXIT_OK, "hello NAME");
+func test_help_succeeds(): void {
+    expectEq(run(["/?"]), EXIT_OK, "/?");
 }
 
-func test_unknown_command_is_usage_error(): void {
-    expectEq(run(["bogus"]), EXIT_USAGE, "unknown command");
-}
-
-func test_missing_command_is_usage_error(): void {
+func test_no_operand_fails(): void {
     let none: list[string] = [];
-    expectEq(run(none), EXIT_USAGE, "no command");
+    expectEq(run(none), EXIT_FAILURE, "syntax error");
+}
+
+func test_make_directories(): void {
+    let root = "build/tmp/app_md";
+    fresh(root);
+    expectEq(run([root + "\\one", root + "/two\\three"]), EXIT_OK, "two operands");
+    expect(isDir(root + "/one") and isDir(root + "/two/three"), "created");
+    expectEq(run([root + "/one"]), EXIT_FAILURE, "already exists");
+    expectEq(run([root + "/four", root + "/one"]), EXIT_FAILURE, "one of two exists");
+    expect(isDir(root + "/four"), "the other one is still created");
+    writeText(root + "/f.txt", "x\n");
+    expectEq(run([root + "/f.txt\\sub"]), EXIT_FAILURE, "file on the way");
+    removeDir(root);
 }

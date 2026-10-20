@@ -1,0 +1,82 @@
+@mode(host.dual)
+
+from debug.assert import (expect, expectEq);
+from io.fs import (createDir, isDir, removeDir, writeText);
+from win.messages import (MSG_ACCESS_DENIED, MSG_INVALID_NAME, MSG_PATH_NOT_FOUND);
+from commands.md import (has_invalid_chars, target_path, entry_present, check_operand,
+    make_directory, failure_lines);
+
+const ROOT: string = "build/tmp/md_unit";
+
+func fresh(): void {
+    if (isDir(ROOT)) {
+        removeDir(ROOT);
+    }
+    createDir(ROOT);
+}
+
+func same(a: string, b: string, what: string): void {
+    expect(a == b, what + ": got '" + a + "', expected '" + b + "'");
+}
+
+func test_invalid_characters(): void {
+    expect(!has_invalid_chars("plain name.txt"), "plain");
+    expect(!has_invalid_chars("a\\b/c"), "separators are fine");
+    expect(has_invalid_chars("a*"), "star");
+    expect(has_invalid_chars("a?b"), "question mark");
+    expect(has_invalid_chars("c:x"), "colon");
+    expect(has_invalid_chars("a<b"), "less than");
+    expect(has_invalid_chars("a|b"), "bar");
+    expect(has_invalid_chars("a\"b"), "quote");
+    expect(has_invalid_chars("a\tb"), "tab");
+}
+
+func test_target_path(): void {
+    same(target_path("a\\b\\c"), "a/b/c", "backslashes");
+    same(target_path("a/b/"), "a/b", "trailing separator");
+    same(target_path("a\\\\b"), "a/b", "doubled separator");
+    same(target_path(".\\a"), "a", "dot");
+    same(target_path("a\\..\\b"), "b", "dot-dot by name");
+    same(target_path("..\\x"), "../x", "leading dot-dot stays");
+    same(target_path("a\\..\\..\\x"), "../x", "past the start");
+    same(target_path("\\tmp\\x"), "/tmp/x", "absolute");
+    same(target_path("/.."), "/", "above the root");
+    same(target_path("."), ".", "current directory");
+}
+
+func test_check_operand(): void {
+    fresh();
+    createDir(ROOT + "/d");
+    writeText(ROOT + "/f.txt", "x\n");
+    same(check_operand(ROOT + "/new"), "", "new directory");
+    same(check_operand(ROOT + "/new/deeper"), "", "with a missing parent");
+    same(check_operand(ROOT + "\\d"), "A subdirectory or file " + "build\\tmp\\md_unit\\d already exists.",
+        "existing directory");
+    same(check_operand(ROOT + "/f.txt"), "A subdirectory or file " + "build\\tmp\\md_unit\\f.txt already exists.",
+        "existing file");
+    same(check_operand(ROOT + "/f.txt/sub"), MSG_PATH_NOT_FOUND, "file on the way");
+    same(check_operand(ROOT + "/a*"), MSG_INVALID_NAME, "wildcard");
+    same(check_operand(""), MSG_INVALID_NAME, "empty");
+    removeDir(ROOT);
+}
+
+func test_make_directory(): void {
+    fresh();
+    same(make_directory(ROOT + "\\x\\y\\z"), "", "nested");
+    expect(isDir(ROOT + "/x/y/z"), "nested created");
+    same(make_directory(ROOT + "/q/../r"), "", "dot-dot");
+    expect(isDir(ROOT + "/r") and !isDir(ROOT + "/q"), "only r is made");
+    expect(make_directory(ROOT + "/x").len() > 0, "second time fails");
+    expect(entry_present(ROOT + "/x"), "entry present");
+    expect(!entry_present(ROOT + "/nothing"), "entry missing");
+    removeDir(ROOT);
+}
+
+func test_failure_lines(): void {
+    let one = failure_lines("a/b", "A subdirectory or file a\\b already exists.", false);
+    expectEq(one.len(), 1, "one operand: the message only");
+    let several = failure_lines("a/b", "Access is denied.", true);
+    expectEq(several.len(), 2, "several operands: two lines");
+    same(several[1], "Error occurred while processing: a\\b.", "second line");
+    same(several[0], MSG_ACCESS_DENIED, "first line");
+}

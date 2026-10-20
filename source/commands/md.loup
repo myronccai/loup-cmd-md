@@ -1,0 +1,164 @@
+@mode(host.dual)
+
+# md (mkdir): creates each directory named on the command line, with any
+# missing intermediate directories, as cmd.exe does with command extensions
+# enabled (the default). Operands may use `\` or `/`.
+#
+# Loup 1.26.0's native io.fs reports nothing: createDir (an `mkdir -p`)
+# fails silently, so every directory is checked after it is made. Stage0
+# (`make test`) throws IoError instead; both are handled.
+
+from appinfo import (EXIT_OK, EXIT_FAILURE);
+from cli.args import (Options);
+from io.fs import (createDir, isDir, listDir);
+from win.messages import (MSG_ACCESS_DENIED, MSG_INVALID_NAME, MSG_PATH_NOT_FOUND, MSG_SYNTAX,
+    msg_already_exists, msg_error_processing);
+from win.paths import (base_name, display_path, fs_path, is_absolute_path, join_path, parent_dir,
+    path_components);
+
+# Characters Windows does not allow in a file or directory name, besides the
+# separators `\` and `/` and the control characters.
+pub const INVALID_CHARS: string = "<>:\"|?*";
+
+# Whether the operand holds a character Windows rejects in names.
+pub func has_invalid_chars(operand: string): bool {
+    for (ch in operand) {
+        if (INVALID_CHARS.index_of(ch) >= 0) {
+            return true;
+        }
+        let code = match char.fromString(ch) {
+            Some(cc) => cc.toInt(),
+            None => -1,
+        };
+        if (code >= 0 and code < 32) {
+            return true;
+        }
+    }
+    return false;
+}
+
+# The directory to create for an operand, in fs form: `\` becomes `/`, and
+# `.` and `name\..` are resolved by name, as Windows does before it creates
+# anything (`a\..\b` makes `b`, not `a`). Leading `..` of a relative path
+# stay. An empty result is `.`.
+pub func target_path(operand: string): string {
+    var parts: list[string] = [];
+    for (part in path_components(fs_path(operand))) {
+        if (part == ".") {
+            continue;
+        }
+        if (part == ".." and parts.len() > 0 and parts[parts.len() - 1] != "..") {
+            parts.pop();
+            continue;
+        }
+        if (part == ".." and is_absolute_path(operand)) {
+            continue;
+        }
+        parts.push(part);
+    }
+    let joined = parts.join("/");
+    if (is_absolute_path(operand)) {
+        return "/" + joined;
+    }
+    if (joined.len() == 0) {
+        return ".";
+    }
+    return joined;
+}
+
+# Whether there is a directory entry at `path`, even a symbolic link that
+# leads nowhere (`exists` follows links, so it is false for those).
+pub func entry_present(path: string): bool {
+    if (exists(path)) {
+        return true;
+    }
+    let name = base_name(path);
+    if (name.len() == 0 or name == "." or name == "..") {
+        return false;
+    }
+    var dir = parent_dir(path);
+    if (dir.len() == 0) {
+        dir = ".";
+    }
+    if (!isDir(dir)) {
+        return false;
+    }
+    try {
+        return listDir(dir).contains(name);
+    } catch (Exception as e) {
+        return false;
+    }
+    return false;
+}
+
+# Why the operand cannot be created, or "" if md should create it.
+pub func check_operand(operand: string): string {
+    if (operand.len() == 0 or has_invalid_chars(operand)) {
+        return MSG_INVALID_NAME;
+    }
+    let path = target_path(operand);
+    if (entry_present(path)) {
+        return msg_already_exists(display_path(operand));
+    }
+    # Something that is not a directory on the way (`notes.txt\sub`) cannot
+    # hold a new directory.
+    let parts = path_components(path);
+    var prefix = if (is_absolute_path(path)) { "/" } else { "" };
+    var i = 0;
+    while (i + 1 < parts.len()) {
+        prefix = join_path(prefix, parts[i]);
+        if (entry_present(prefix) and !isDir(prefix)) {
+            return MSG_PATH_NOT_FOUND;
+        }
+        i += 1;
+    }
+    return "";
+}
+
+# Creates one directory (and its parents); returns "" or the message to
+# print.
+pub func make_directory(operand: string): string {
+    let problem = check_operand(operand);
+    if (problem.len() > 0) {
+        return problem;
+    }
+    let path = target_path(operand);
+    try {
+        createDir(path);
+    } catch (Exception as e) {
+        return MSG_ACCESS_DENIED;
+    }
+    if (!isDir(path)) {
+        return MSG_ACCESS_DENIED;
+    }
+    return "";
+}
+
+# What md prints for a failed operand: the message, then, when md was given
+# several operands, `Error occurred while processing: X.`
+pub func failure_lines(operand: string, problem: string, several: bool): list[string] {
+    var lines = [problem];
+    if (several) {
+        lines.push(msg_error_processing(display_path(operand)));
+    }
+    return lines;
+}
+
+pub func run_md(opts: Options): int {
+    if (opts.operands.len() == 0) {
+        printErr(MSG_SYNTAX);
+        return EXIT_FAILURE;
+    }
+    let several = opts.operands.len() > 1;
+    var status = EXIT_OK;
+    for (op in opts.operands) {
+        let problem = make_directory(op);
+        if (problem.len() > 0) {
+            for (line in failure_lines(op, problem, several)) {
+                printErr(line);
+            }
+            status = EXIT_FAILURE;
+        }
+    }
+    return status;
+}
