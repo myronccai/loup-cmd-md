@@ -1,6 +1,6 @@
 # Tasks: md
 
-- [x] 1. Copy the shared Windows code into `source/win/` (bbaf257)
+- [x] 1. Copy the shared Windows code into `source/win/` (f601bf9)
   - _Requirements: 1.3, 3.2_
 - [x] 2. Parse md's command line (no switches, `/?`, `--`, `--version`)
   - _Requirements: 3.1, 3.2, 3.3_
