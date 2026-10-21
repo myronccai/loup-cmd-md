@@ -57,25 +57,25 @@ func test_check_operand(): void {
     fresh();
     createDir(ROOT + "/d");
     writeText(ROOT + "/f.txt", "x\n");
-    same(check_operand(ROOT + "/new"), "", "new directory");
-    same(check_operand(ROOT + "/new/deeper"), "", "with a missing parent");
-    same(check_operand(ROOT + "\\d"), "A subdirectory or file " + "build\\tmp\\md_unit\\d already exists.",
+    same(check_operand(ROOT + "/new") ?? "", "", "new directory");
+    same(check_operand(ROOT + "/new/deeper") ?? "", "", "with a missing parent");
+    same(check_operand(ROOT + "\\d") ?? "", "A subdirectory or file " + "build\\tmp\\md_unit\\d already exists.",
         "existing directory");
-    same(check_operand(ROOT + "/f.txt"), "A subdirectory or file " + "build\\tmp\\md_unit\\f.txt already exists.",
+    same(check_operand(ROOT + "/f.txt") ?? "", "A subdirectory or file " + "build\\tmp\\md_unit\\f.txt already exists.",
         "existing file");
-    same(check_operand(ROOT + "/f.txt/sub"), MSG_PATH_NOT_FOUND, "file on the way");
-    same(check_operand(ROOT + "/a*"), MSG_INVALID_NAME, "wildcard");
-    same(check_operand(""), MSG_INVALID_NAME, "empty");
+    same(check_operand(ROOT + "/f.txt/sub") ?? "", MSG_PATH_NOT_FOUND, "file on the way");
+    same(check_operand(ROOT + "/a*") ?? "", MSG_INVALID_NAME, "wildcard");
+    same(check_operand("") ?? "", MSG_INVALID_NAME, "empty");
     removeDir(ROOT);
 }
 
 func test_make_directory(): void {
     fresh();
-    same(make_directory(ROOT + "\\x\\y\\z"), "", "nested");
+    same(make_directory(ROOT + "\\x\\y\\z") ?? "", "", "nested");
     expect(isDir(ROOT + "/x/y/z"), "nested created");
-    same(make_directory(ROOT + "/q/../r"), "", "dot-dot");
+    same(make_directory(ROOT + "/q/../r") ?? "", "", "dot-dot");
     expect(isDir(ROOT + "/r") and !isDir(ROOT + "/q"), "only r is made");
-    expect(make_directory(ROOT + "/x").len() > 0, "second time fails");
+    expect(make_directory(ROOT + "/x").is_some(), "second time fails");
     expect(entry_present(ROOT + "/x"), "entry present");
     expect(!entry_present(ROOT + "/nothing"), "entry missing");
     removeDir(ROOT);

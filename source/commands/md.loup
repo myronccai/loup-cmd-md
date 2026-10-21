@@ -13,7 +13,8 @@
 # Structure: check_operand() decides, before anything is created, why an
 # operand cannot be made (a character Windows rejects, an existing entry, a
 # file on the way), working on target_path(), the operand with `.` and `..`
-# resolved by name; make_directory() then creates it and checks the result;
+# resolved by name; make_directory() then creates it and checks the result.
+# Both return a `string?`: the message to print, or None when all is well.
 # run_md() is the only function that prints.
 
 from appinfo import (EXIT_OK, EXIT_FAILURE);
@@ -93,20 +94,20 @@ pub func entry_present(path: string): bool {
     }
     try {
         return listDir(dir).contains(name);
-    } catch (Exception as e) {
+    } catch (IoError) {
         return false;
     }
     return false;
 }
 
-# Why the operand cannot be created, or "" if md should create it.
-pub func check_operand(operand: string): string {
+# Why the operand cannot be created, or None if md should create it.
+pub func check_operand(operand: string): string? {
     if (operand.len() == 0 or has_invalid_chars(operand)) {
-        return MSG_INVALID_NAME;
+        return Some(MSG_INVALID_NAME);
     }
     let path = target_path(operand);
     if (entry_present(path)) {
-        return msg_already_exists(display_path(operand));
+        return Some(msg_already_exists(display_path(operand)));
     }
     # Something that is not a directory on the way (`notes.txt\sub`) cannot
     # hold a new directory.
@@ -116,30 +117,30 @@ pub func check_operand(operand: string): string {
     while (i + 1 < parts.len()) {
         prefix = join_path(prefix, parts[i]);
         if (entry_present(prefix) and !isDir(prefix)) {
-            return MSG_PATH_NOT_FOUND;
+            return Some(MSG_PATH_NOT_FOUND);
         }
         i += 1;
     }
-    return "";
+    return None;
 }
 
-# Creates one directory (and its parents); returns "" or the message to
+# Creates one directory (and its parents); returns None, or the message to
 # print.
-pub func make_directory(operand: string): string {
+pub func make_directory(operand: string): string? {
     let problem = check_operand(operand);
-    if (problem.len() > 0) {
+    if (problem.is_some()) {
         return problem;
     }
     let path = target_path(operand);
     try {
         createDir(path);
-    } catch (Exception as e) {
-        return MSG_ACCESS_DENIED;
+    } catch (IoError) {
+        return Some(MSG_ACCESS_DENIED);
     }
     if (!isDir(path)) {
-        return MSG_ACCESS_DENIED;
+        return Some(MSG_ACCESS_DENIED);
     }
-    return "";
+    return None;
 }
 
 # What md prints for a failed operand: the message, then, when md was given
@@ -160,12 +161,14 @@ pub func run_md(opts: Options): int {
     let several = opts.operands.len() > 1;
     var status = EXIT_OK;
     for (op in opts.operands) {
-        let problem = make_directory(op);
-        if (problem.len() > 0) {
-            for (line in failure_lines(op, problem, several)) {
-                printErr(line);
-            }
-            status = EXIT_FAILURE;
+        match make_directory(op) {
+            Some(problem) => {
+                for (line in failure_lines(op, problem, several)) {
+                    printErr(line);
+                }
+                status = EXIT_FAILURE;
+            },
+            None => {},
         }
     }
     return status;
