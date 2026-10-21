@@ -4,9 +4,17 @@
 # missing intermediate directories, as cmd.exe does with command extensions
 # enabled (the default). Operands may use `\` or `/`.
 #
-# Loup 1.26.0's native io.fs reports nothing: createDir (an `mkdir -p`)
-# fails silently, so every directory is checked after it is made. Stage0
+# Runtime: host.dual. Compiled into the native binary build/md by
+# `make build`; `loup run source/main.loup` interprets the same code. Loup
+# 1.26.0's native io.fs reports nothing: createDir (an `mkdir -p`) fails
+# silently, so every directory is checked after it is made. Stage0
 # (`make test`) throws IoError instead; both are handled.
+#
+# Structure: check_operand() decides, before anything is created, why an
+# operand cannot be made (a character Windows rejects, an existing entry, a
+# file on the way), working on target_path(), the operand with `.` and `..`
+# resolved by name; make_directory() then creates it and checks the result;
+# run_md() is the only function that prints.
 
 from appinfo import (EXIT_OK, EXIT_FAILURE);
 from cli.args import (Options);
